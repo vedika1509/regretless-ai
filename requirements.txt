@@ -1,0 +1,15 @@
+# Core Dependencies
+streamlit>=1.28.0
+numpy>=1.24.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+
+# AI/LLM
+google-generativeai>=0.3.0
+
+# Visualization
+plotly>=5.17.0
+pandas>=2.0.0
+
+# Report Generation
+reportlab>=4.0.0
