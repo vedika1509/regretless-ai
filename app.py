@@ -193,7 +193,7 @@ def analyze_decision(decision_text: str, decision_type: str):
         # Step 4: Detect risks
         with st.spinner("🚨 Detecting risks..."):
             risk_detector = RiskDetector()
-            risks = risk_detector.detect_risks(simulation_results)
+            risks = risk_detector.detect_risks(simulation_results, decision_text)
 
         # Step 5: Generate explanations
         scenarios = {}
@@ -1038,7 +1038,12 @@ What decision would you like to analyze?"""
                             with cols[idx]:
                                 st.markdown(f"**{scenario_titles[scenario_type]}**")
                                 st.metric("Overall", f"{scenario.outcomes.overall_score:.2f}")
-                                st.caption(scenario.explanation[:100] + "...")
+                                # Show full explanation with expander if long, otherwise show directly
+                                if len(scenario.explanation) > 150:
+                                    with st.expander("📖 Read explanation", expanded=False):
+                                        st.write(scenario.explanation)
+                                else:
+                                    st.write(scenario.explanation)
 
                     # Display risks if any
                     if result.risks:
@@ -1292,7 +1297,7 @@ def perform_analysis(decision_text: str, decision_type: str):
 
         # Step 4: Detect risks
         risk_detector = RiskDetector()
-        risks = risk_detector.detect_risks(simulation_results)
+        risks = risk_detector.detect_risks(simulation_results, decision_text)
 
         # Step 5: Generate explanations
         scenarios = {}

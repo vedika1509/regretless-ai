@@ -11,17 +11,22 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid valu
 class RiskDetector:
     """Detect risks in simulation results."""
     
-    def detect_risks(self, results: List[Dict[str, float]]) -> List[RiskFlag]:
+    def detect_risks(self, results: List[Dict[str, float]], decision_text: str = None) -> List[RiskFlag]:
         """
         Detect risks in simulation results.
         
         Args:
             results: List of simulation results
+            decision_text: Original decision text for emotional/psychological risk detection
         
         Returns:
             List of detected risk flags
         """
         risks = []
+        
+        # Detect emotional/psychological risks from decision text
+        if decision_text:
+            risks.extend(self._detect_emotional_risks(decision_text))
         
         if not results or len(results) < 10:
             return risks
@@ -99,5 +104,52 @@ class RiskDetector:
                     severity="medium",
                     description="Despite positive financial outcomes, satisfaction scores remain low. This suggests non-financial factors are important."
                 ))
+        
+        return risks
+    
+    def _detect_emotional_risks(self, decision_text: str) -> List[RiskFlag]:
+        """
+        Detect emotional/psychological risks from decision text.
+        
+        Args:
+            decision_text: Original decision text
+        
+        Returns:
+            List of risk flags for emotional/psychological factors
+        """
+        risks = []
+        text_lower = decision_text.lower()
+        
+        # Detect toxicity
+        toxicity_keywords = ["toxic", "hostile", "unhealthy", "abusive", "bullying", "harassment", "hate"]
+        if any(keyword in text_lower for keyword in toxicity_keywords):
+            # Find the specific keyword mentioned
+            mentioned_keyword = next((kw for kw in toxicity_keywords if kw in text_lower), "toxic environment")
+            risks.append(RiskFlag(
+                risk_type="toxicity_risk",
+                severity="high",
+                description=f"Toxic work environment detected ('{mentioned_keyword}'). Toxic environments significantly impact mental health, job satisfaction, and long-term well-being. Even if financial outcomes are positive, staying in a toxic environment can lead to burnout, health issues, and regret."
+            ))
+        
+        # Detect mental health concerns
+        mental_health_keywords = ["mentally", "depressed", "anxious", "stress", "stressed", "burnout", 
+                                  "exhausted", "overwhelmed", "drained", "unhappy", "mental health", "mental well"]
+        if any(keyword in text_lower for keyword in mental_health_keywords):
+            mentioned_keyword = next((kw for kw in mental_health_keywords if kw in text_lower), "mental health concerns")
+            risks.append(RiskFlag(
+                risk_type="mental_health_risk",
+                severity="high",
+                description=f"Mental health concerns detected ('{mentioned_keyword}'). Mental health and well-being are critical factors that should be prioritized. Continuing in an environment that negatively impacts mental health can have severe long-term consequences, regardless of financial benefits."
+            ))
+        
+        # Detect stress indicators
+        stress_keywords = ["stress", "stressed", "pressure", "overwhelming", "too much", "can't handle"]
+        if any(keyword in text_lower for keyword in stress_keywords) and not any(r.risk_type == "mental_health_risk" for r in risks):
+            mentioned_keyword = next((kw for kw in stress_keywords if kw in text_lower), "high stress")
+            risks.append(RiskFlag(
+                risk_type="stress_risk",
+                severity="medium",
+                description=f"High stress indicators detected ('{mentioned_keyword}'). Chronic stress can lead to burnout, health problems, and decreased satisfaction. Consider stress management strategies or evaluating whether the current situation is sustainable."
+            ))
         
         return risks

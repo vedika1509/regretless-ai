@@ -70,6 +70,33 @@ Scenarios:
     return context
 
 
+def detect_question_type(user_message: str) -> str:
+    """
+    Detect the type of question being asked.
+    
+    Args:
+        user_message: User's message/question
+    
+    Returns:
+        Question type: "outcome", "emotional", "general"
+    """
+    user_lower = user_message.lower()
+    
+    # Check for "what will happen" type questions
+    outcome_keywords = ["what will", "what happens", "what if", "outcomes", "results", 
+                       "what would", "tell me what", "explain what", "what should i expect"]
+    if any(keyword in user_lower for keyword in outcome_keywords):
+        return "outcome"
+    
+    # Check for emotional concerns
+    emotional_keywords = ["toxic", "toxicity", "stress", "stressed", "anxious", 
+                         "worried", "concerned", "scared", "afraid", "mentally"]
+    if any(keyword in user_lower for keyword in emotional_keywords):
+        return "emotional"
+    
+    return "general"
+
+
 def generate_chat_response(
     user_message: str,
     analysis_result: AnalysisResult,
@@ -89,6 +116,9 @@ def generate_chat_response(
         Assistant's response
     """
     model = initialize_gemini()
+    
+    # Detect question type
+    question_type = detect_question_type(user_message)
     
     # Format analysis context
     analysis_context = format_analysis_context(analysis_result, decision_text)
@@ -150,6 +180,28 @@ IMPORTANT: When users share additional context about their situation (like menti
     elif any(word in user_lower for word in ["stress", "stressed", "anxious", "worried", "concerned"]):
         emotional_context = "\nIMPORTANT: The user is expressing stress or anxiety about the decision. Be empathetic and help them understand how stress factors into the analysis.\n"
     
+    # Add specific instructions for "what will happen" questions
+    outcome_instructions = ""
+    if question_type == "outcome":
+        outcome_instructions = """
+CRITICAL: The user is asking "what will happen" or similar questions about outcomes.
+
+You MUST:
+1. Directly interpret the scenario results from the analysis - don't ask for more information
+2. Summarize what each scenario (best case, most likely, worst case) actually shows
+3. Use the specific explanations from the analysis provided above
+4. Reference concrete numbers (scores, probabilities) from the scenarios
+5. Explain what would happen in each scenario based on the data already available
+6. Be specific about outcomes - financial, satisfaction, risk scores for each scenario
+
+Do NOT:
+- Ask the user to provide more information
+- Give generic responses like "it depends" without interpreting the data
+- Ignore the scenario explanations already provided
+
+Instead, directly tell them what the analysis shows will happen in each scenario.
+"""
+    
     # Build the prompt
     prompt = f"""{conversation_context}
 
@@ -157,6 +209,7 @@ IMPORTANT: When users share additional context about their situation (like menti
 
 {history_text}
 {emotional_context}
+{outcome_instructions}
 
 User's current message: {user_message}
 
@@ -168,6 +221,8 @@ Your response should:
 5. Be conversational, natural, and caring - not robotic or scripted
 
 If they mention toxicity, stress, or concerns, address it directly and help them understand the implications. Use the analysis data to support your response, but also show human understanding of their situation.
+
+If they're asking about outcomes ("what will happen"), directly interpret and summarize the scenario results from the analysis above.
 
 Generate your response now:"""
 

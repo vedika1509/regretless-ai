@@ -19,6 +19,30 @@ def initialize_gemini() -> genai.GenerativeModel:
     return genai.GenerativeModel('gemini-pro')
 
 
+def detect_emotional_factors(decision_text: str) -> Dict[str, bool]:
+    """
+    Detect emotional/psychological keywords in decision text.
+    
+    Args:
+        decision_text: Natural language description of the decision
+    
+    Returns:
+        Dictionary indicating presence of different emotional factors
+    """
+    text_lower = decision_text.lower()
+    
+    toxicity_keywords = ["toxic", "hostile", "unhealthy", "abusive", "bullying", "harassment"]
+    mental_health_keywords = ["mentally", "depressed", "anxious", "stress", "stressed", 
+                             "burnout", "exhausted", "overwhelmed", "drained", "unhappy"]
+    negative_keywords = ["bad", "terrible", "awful", "hate", "horrible", "miserable"]
+    
+    return {
+        "has_toxicity": any(keyword in text_lower for keyword in toxicity_keywords),
+        "has_mental_health": any(keyword in text_lower for keyword in mental_health_keywords),
+        "has_negative_env": any(keyword in text_lower for keyword in negative_keywords)
+    }
+
+
 def generate_scenario_explanation(
     scenario_type: str,
     metrics: Dict[str, float],
@@ -37,6 +61,9 @@ def generate_scenario_explanation(
     """
     model = initialize_gemini()
     
+    # Detect emotional factors
+    emotional_factors = detect_emotional_factors(decision_text)
+    
     scenario_names = {
         "best_case": "Best Case",
         "worst_case": "Worst Case",
@@ -45,9 +72,29 @@ def generate_scenario_explanation(
     
     scenario_name = scenario_names.get(scenario_type, scenario_type)
     
+    # Build emotional context emphasis
+    emotional_emphasis = ""
+    if emotional_factors["has_toxicity"] or emotional_factors["has_mental_health"]:
+        emotional_emphasis = "\nIMPORTANT CONTEXT: The decision text mentions emotional/psychological concerns:\n"
+        if emotional_factors["has_toxicity"]:
+            emotional_emphasis += "- Toxicity/toxic environment mentioned - this significantly impacts well-being and satisfaction\n"
+        if emotional_factors["has_mental_health"]:
+            emotional_emphasis += "- Mental health concerns mentioned (stress, burnout, mental well-being)\n"
+        
+        emotional_emphasis += """
+You MUST emphasize these factors in your explanation:
+- For best case: If leaving a toxic environment, emphasize improved mental health, reduced stress, and better well-being
+- For worst case: If staying in toxic environment, explicitly mention continued mental health impact, potential burnout, and long-term consequences
+- For most likely: Discuss how emotional/psychological factors affect outcomes more than financial metrics
+- Reference the user's specific concerns (toxicity, mental health) directly
+- Be empathetic and acknowledge that these factors are critical to long-term satisfaction
+"""
+    
     prompt = f"""You are a decision analysis expert providing empathetic, clear explanations of decision outcomes.
 
 Original Decision: {decision_text}
+
+{emotional_emphasis}
 
 Scenario Type: {scenario_name}
 
@@ -66,6 +113,9 @@ Guidelines:
 - For best case: emphasize opportunities and positive outcomes
 - For worst case: acknowledge challenges but remain constructive
 - For most likely: provide a balanced, realistic view
+- If emotional/psychological factors are mentioned above, make them central to your explanation
+- For toxic environments: explicitly mention mental health, well-being, and long-term satisfaction impacts
+- Be empathetic and acknowledge that these factors often matter more than financial metrics
 
 Return ONLY the explanation text, no labels or formatting."""
 

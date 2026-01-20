@@ -20,6 +20,30 @@ def initialize_gemini() -> genai.GenerativeModel:
     return genai.GenerativeModel('gemini-pro')
 
 
+def detect_emotional_factors(decision_text: str) -> Dict[str, bool]:
+    """
+    Detect emotional/psychological keywords in decision text.
+    
+    Args:
+        decision_text: Natural language description of the decision
+    
+    Returns:
+        Dictionary indicating presence of different emotional factors
+    """
+    text_lower = decision_text.lower()
+    
+    toxicity_keywords = ["toxic", "hostile", "unhealthy", "abusive", "bullying", "harassment"]
+    mental_health_keywords = ["mentally", "depressed", "anxious", "stress", "stressed", 
+                             "burnout", "exhausted", "overwhelmed", "drained", "unhappy"]
+    negative_keywords = ["bad", "terrible", "awful", "hate", "horrible", "miserable"]
+    
+    return {
+        "has_toxicity": any(keyword in text_lower for keyword in toxicity_keywords),
+        "has_mental_health": any(keyword in text_lower for keyword in mental_health_keywords),
+        "has_negative_env": any(keyword in text_lower for keyword in negative_keywords)
+    }
+
+
 def parse_decision(decision_text: str, decision_type: str = "custom") -> StructuredDecision:
     """
     Parse a natural language decision into structured variables.
@@ -33,10 +57,41 @@ def parse_decision(decision_text: str, decision_type: str = "custom") -> Structu
     """
     model = initialize_gemini()
     
+    # Detect emotional factors
+    emotional_factors = detect_emotional_factors(decision_text)
+    
+    # Build enhanced prompt with emotional context
+    emotional_emphasis = ""
+    if emotional_factors["has_toxicity"] or emotional_factors["has_mental_health"] or emotional_factors["has_negative_env"]:
+        emotional_emphasis = """
+IMPORTANT: The decision text contains emotional/psychological concerns:
+"""
+        if emotional_factors["has_toxicity"]:
+            emotional_emphasis += "- Toxicity indicators detected (toxic, hostile, abusive environment)\n"
+        if emotional_factors["has_mental_health"]:
+            emotional_emphasis += "- Mental health concerns detected (stress, burnout, mental well-being)\n"
+        if emotional_factors["has_negative_env"]:
+            emotional_emphasis += "- Negative environment indicators detected\n"
+        
+        emotional_emphasis += """
+You MUST create variables that capture these emotional/psychological factors:
+1. toxicity_level (if toxicity mentioned) - Should have high impact on satisfaction and risk scores
+   - Base value: -0.6 to -0.8 (negative impact on satisfaction)
+   - Should significantly increase risk_score
+   
+2. mental_health_impact (if mental health mentioned) - Should heavily weight satisfaction calculations
+   - Base value: -0.5 to -0.7 (negative impact on satisfaction)
+   - Should increase risk_score substantially
+
+These factors should be weighted MORE HEAVILY than financial factors in determining satisfaction and risk outcomes.
+"""
+    
     prompt = f"""You are a decision analysis expert. Extract structured variables from the following decision.
 
 Decision Type: {decision_type}
 Decision Text: {decision_text}
+
+{emotional_emphasis}
 
 Your task is to identify key variables that affect the outcome of this decision and assign them probability distributions.
 
@@ -50,6 +105,7 @@ Focus on variables like:
 - Time/effort changes
 - Risk factors (stability, uncertainty)
 - Quality of life factors (work-life balance, stress, satisfaction)
+- Emotional/psychological factors (toxicity, mental health, well-being) - if mentioned, these are CRITICAL
 
 Return a JSON object with this structure:
 {{
@@ -109,6 +165,21 @@ Return ONLY the JSON object, no other text."""
                 value=var_data["value"],
                 distribution=var_data["distribution"],
                 params=var_data["params"]
+            )
+        
+        # If emotional factors detected but not in parsed data, add them
+        if emotional_factors["has_toxicity"] and "toxicity_level" not in variables:
+            variables["toxicity_level"] = VariableDistribution(
+                value=-0.7,  # High negative impact
+                distribution="beta",
+                params={"alpha": 1, "beta": 3}  # Skewed toward negative
+            )
+        
+        if emotional_factors["has_mental_health"] and "mental_health_impact" not in variables:
+            variables["mental_health_impact"] = VariableDistribution(
+                value=-0.6,  # Significant negative impact
+                distribution="beta",
+                params={"alpha": 1, "beta": 2.5}  # Skewed toward negative
             )
         
         return StructuredDecision(
