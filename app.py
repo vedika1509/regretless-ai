@@ -56,6 +56,12 @@ if 'simulation_results' not in st.session_state:
 if 'structured_decision' not in st.session_state:
     st.session_state.structured_decision = None
 
+if 'pending_user_input' not in st.session_state:
+    st.session_state.pending_user_input = None
+
+if 'analysis_in_progress' not in st.session_state:
+    st.session_state.analysis_in_progress = False
+
 # Custom CSS for better styling
 st.markdown("""
     <style>
@@ -738,9 +744,52 @@ What decision would you like to analyze?"""
                         fig = plot_scenario_comparison(st.session_state.analysis_result.scenarios)
                         st.plotly_chart(fig, use_container_width=True)
                 
+                elif msg.get("type") == "loading":
+                    # Show loading indicator
+                    with st.spinner(msg["content"]):
+                        st.write(msg["content"])
+                
                 else:
                     # Regular text message
                     st.write(msg["content"])
+    
+    # Check if we need to process a pending analysis (after loading message was shown)
+    if (len(st.session_state.conversation_history) >= 2 and 
+        st.session_state.conversation_history[-1].get("type") == "loading" and
+        st.session_state.conversation_history[-2].get("role") == "user" and
+        not st.session_state.get("analysis_in_progress", False)):
+        
+        # Get user message
+        user_input = st.session_state.conversation_history[-2]["content"]
+        
+        # Mark analysis as in progress
+        st.session_state.analysis_in_progress = True
+        
+        try:
+            # Extract decision text from user input
+            decision_text = user_input
+            if ":" in user_input:
+                decision_text = user_input.split(":", 1)[1].strip()
+            
+            decision_type = st.session_state.decision_type or "Custom"
+            
+            # Perform analysis (reuse existing function)
+            perform_analysis(decision_text, decision_type)
+            st.session_state.analysis_in_progress = False
+            st.rerun()
+            
+        except Exception as e:
+            # Remove loading message
+            if st.session_state.conversation_history and st.session_state.conversation_history[-1].get("type") == "loading":
+                st.session_state.conversation_history.pop()
+            
+            error_msg = f"❌ I apologize, but I encountered an error while analyzing your decision:\n\n**Error:** {str(e)}\n\n**Please try:**\n- Rephrasing your question\n- Providing more details about your decision\n- Checking your GEMINI_API_KEY in environment variables"
+            st.session_state.conversation_history.append({
+                "role": "assistant",
+                "content": error_msg
+            })
+            st.session_state.analysis_in_progress = False
+            st.rerun()
     
     # Chat input
     user_input = st.chat_input("Describe your decision or ask a question...")
@@ -753,27 +802,21 @@ What decision would you like to analyze?"""
         })
         
         # Check if user wants to analyze a new decision
-        if st.session_state.analysis_result is None or any(keyword in user_input.lower() for keyword in ["new decision", "another decision", "analyze", "help me with"]):
-            # Analyze decision
-            with st.spinner("Analyzing your decision..."):
-                try:
-                    # Extract decision text from user input
-                    decision_text = user_input
-                    if ":" in user_input:
-                        decision_text = user_input.split(":", 1)[1].strip()
-                    
-                    decision_type = st.session_state.decision_type or "Custom"
-                    
-                    # Perform analysis (reuse existing function)
-                    perform_analysis(decision_text, decision_type)
-                    
-                except Exception as e:
-                    error_msg = f"I apologize, but I encountered an error while analyzing your decision: {str(e)}. Please try rephrasing your question or providing more details."
-                    st.session_state.conversation_history.append({
-                        "role": "assistant",
-                        "content": error_msg
-                    })
-                    st.rerun()
+        should_analyze = (
+            st.session_state.analysis_result is None or 
+            any(keyword in user_input.lower() for keyword in ["new decision", "another decision", "analyze", "help me with", "should i", "what if"])
+        )
+        
+        if should_analyze:
+            # Add loading message immediately
+            loading_msg = {
+                "role": "assistant",
+                "content": "🔍 I'm analyzing your decision. This may take 30-60 seconds. Please wait...",
+                "type": "loading"
+            }
+            st.session_state.conversation_history.append(loading_msg)
+            st.session_state.analysis_in_progress = False  # Reset flag
+            st.rerun()  # Show loading message first, then process in next cycle
         
         # If we have analysis results, generate conversational response
         elif st.session_state.analysis_result:
@@ -904,8 +947,12 @@ def perform_analysis(decision_text: str, decision_type: str):
         st.session_state.simulation_results = simulation_results
         st.session_state.structured_decision = structured_decision
         
+        # Remove loading message
+        if st.session_state.conversation_history and st.session_state.conversation_history[-1].get("type") == "loading":
+            st.session_state.conversation_history.pop()
+        
         # Add analysis result to chat
-        result_msg = f"""I've completed the analysis of your decision. Here are the key insights:
+        result_msg = f"""✅ I've completed the analysis of your decision! Here are the key insights:
 
 **Decision:** {decision_text}
 
@@ -919,6 +966,15 @@ The analysis is based on {simulation_count:,} Monte Carlo simulations. Here's wh
         })
         
     except Exception as e:
+        # Remove loading message
+        if st.session_state.conversation_history and st.session_state.conversation_history[-1].get("type") == "loading":
+            st.session_state.conversation_history.pop()
+        
+        error_msg = f"❌ Error: {str(e)}"
+        st.session_state.conversation_history.append({
+            "role": "assistant",
+            "content": error_msg
+        })
         raise e
 
 
