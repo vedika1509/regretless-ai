@@ -30,10 +30,16 @@ def format_analysis_context(result: AnalysisResult, decision_text: str) -> str:
     Returns:
         Formatted context string
     """
+    from services.regret_calculator import get_regret_level, get_regret_explanation
+    
+    regret_level = get_regret_level(result.regret_score)
+    regret_explanation = get_regret_explanation(result.regret_score)
+    
     context = f"""Original Decision: {decision_text}
 
 Analysis Results:
 - Confidence: {result.confidence:.1%}
+- Regret Score: {result.regret_score:.2f} ({regret_level}) - {regret_explanation}
 - Simulations Run: {result.simulation_count:,}
 
 Scenarios:
@@ -96,20 +102,27 @@ Your role:
 - Provide empathetic, clear, and practical guidance
 - Help users reason through their decision using the analysis data
 - Be conversational, friendly, and supportive
+- Understand emotional context and concerns (e.g., if they mention toxicity, stress, fear, etc.)
 
 You have access to the complete analysis including:
 - Best case, worst case, and most likely scenarios
 - Financial, satisfaction, and risk scores
 - Detected risks and their severities
 - Overall confidence in the analysis
+- Regret Score (proprietary metric for decision regret risk)
 
 Guidelines:
 - Reference specific numbers and data from the analysis when relevant
 - Help users explore implications of different scenarios
 - Acknowledge concerns and provide thoughtful perspectives
-- If asked about something not in the analysis, say so honestly
-- Keep responses concise (2-4 sentences) unless asked to elaborate
-- Use natural, conversational language
+- If the user mentions additional context (like "but it is toxic", "I'm stressed", etc.), acknowledge it directly and relate it to the analysis
+- Be empathetic and understanding - this is a personal decision
+- Use the Regret Score and risk analysis to provide meaningful insights
+- If asked about something not in the analysis, say so honestly but try to relate it to what we know
+- Keep responses natural and conversational (2-4 sentences is good, but can be longer if needed)
+- Don't be robotic - show genuine understanding and care
+
+IMPORTANT: When users share additional context about their situation (like mentioning toxicity, stress, or concerns), acknowledge it directly and help them think through how it relates to the analysis results. Be genuine and empathetic.
 
 """
     
@@ -117,10 +130,25 @@ Guidelines:
     history_text = ""
     if conversation_history:
         history_text = "\nPrevious conversation:\n"
-        for msg in conversation_history[-6:]:  # Last 6 messages for context
-            role = "User" if msg["role"] == "user" else "Assistant"
-            history_text += f"{role}: {msg['content']}\n"
+        for msg in conversation_history[-8:]:  # Last 8 messages for better context
+            if msg.get("type") == "analysis_result":
+                # Skip the full analysis result display in history, just note it exists
+                continue
+            role = "User" if msg.get("role") == "user" else "Assistant"
+            content = msg.get("content", "")
+            # Truncate long content
+            if len(content) > 300:
+                content = content[:300] + "..."
+            history_text += f"{role}: {content}\n"
         history_text += "\n"
+    
+    # Detect emotional context
+    user_lower = user_message.lower()
+    emotional_context = ""
+    if any(word in user_lower for word in ["toxic", "toxicity", "terrible", "awful", "bad"]):
+        emotional_context = "\nIMPORTANT: The user has mentioned a toxic or negative environment. This is a critical emotional and psychological factor that significantly impacts decision outcomes. Acknowledge this directly and help them understand how toxicity affects long-term satisfaction and well-being beyond just financial metrics.\n"
+    elif any(word in user_lower for word in ["stress", "stressed", "anxious", "worried", "concerned"]):
+        emotional_context = "\nIMPORTANT: The user is expressing stress or anxiety about the decision. Be empathetic and help them understand how stress factors into the analysis.\n"
     
     # Build the prompt
     prompt = f"""{conversation_context}
@@ -128,10 +156,20 @@ Guidelines:
 {analysis_context}
 
 {history_text}
+{emotional_context}
 
 User's current message: {user_message}
 
-Provide a helpful, conversational response that addresses the user's question or comment. Reference specific data from the analysis when relevant."""
+Your response should:
+1. Directly acknowledge and address what the user just said - don't give generic responses
+2. Reference specific data from the analysis when relevant (Regret Score: {analysis_result.regret_score:.2f}, Confidence: {analysis_result.confidence:.1%}, Risk Score, etc.)
+3. Show genuine understanding and empathy
+4. Help them think through how their concerns relate to the analysis results
+5. Be conversational, natural, and caring - not robotic or scripted
+
+If they mention toxicity, stress, or concerns, address it directly and help them understand the implications. Use the analysis data to support your response, but also show human understanding of their situation.
+
+Generate your response now:"""
 
     try:
         response = model.generate_content(prompt)
@@ -141,8 +179,24 @@ Provide a helpful, conversational response that addresses the user's question or
         if reply.startswith('"') and reply.endswith('"'):
             reply = reply[1:-1]
         
+        # Remove any markdown formatting that might interfere
+        if reply.startswith('**') or reply.startswith('*'):
+            # Keep markdown but ensure it's clean
+            pass
+        
         return reply
     
     except Exception as e:
-        # Fallback response
-        return f"I understand your question about the analysis. Let me help you think through this decision. Based on the simulation results, we can explore different aspects of your decision. Could you tell me what specific aspect you'd like to discuss?"
+        # Better error handling - try to give contextual response even on error
+        from services.regret_calculator import get_regret_level, get_regret_explanation
+        
+        # Include user's message in a way that helps them understand we heard them
+        user_lower = user_message.lower()
+        
+        if any(word in user_lower for word in ["toxic", "toxicity", "stress", "stressed", "worried", "concerned", "scared", "afraid"]):
+            regret_level = get_regret_level(analysis_result.regret_score)
+            return f"I hear you mentioning concerns about {user_message.lower()}. That's a really important factor in your decision - a toxic work environment can significantly impact your well-being and satisfaction, even if the financial aspects look good.\n\nLooking at your analysis, your Regret Score is {analysis_result.regret_score:.2f} ({regret_level}), which suggests {get_regret_explanation(analysis_result.regret_score).lower()} However, the toxicity you're experiencing might not be fully captured in the numbers. Toxic environments can lead to long-term burnout, health issues, and regret even if other factors improve.\n\nWould you like to discuss how this toxicity factor might change your analysis, or explore what your options look like considering this?"
+        else:
+            # Still try to be helpful with context
+            regret_level = get_regret_level(analysis_result.regret_score)
+            return f"Based on your analysis, I see your Regret Score is {analysis_result.regret_score:.2f} ({regret_level}), which suggests {get_regret_explanation(analysis_result.regret_score).lower()} \n\nYou mentioned: '{user_message}'. Can you tell me more about how this relates to your decision? I'd like to help you think through this."
