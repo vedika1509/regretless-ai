@@ -1,72 +1,84 @@
 """Service to detect hidden risks and anomalies."""
-import numpy as np
+
 import warnings
-from typing import List, Dict
+from typing import Dict, List
+
+import numpy as np
 from models.scenario import RiskFlag
 
 # Suppress numpy warnings for invalid correlations when variance is zero
-warnings.filterwarnings('ignore', category=RuntimeWarning, message='invalid value encountered in divide')
+warnings.filterwarnings(
+    "ignore", category=RuntimeWarning, message="invalid value encountered in divide"
+)
 
 
 class RiskDetector:
     """Detect risks in simulation results."""
-    
-    def detect_risks(self, results: List[Dict[str, float]], decision_text: str = None) -> List[RiskFlag]:
+
+    def detect_risks(
+        self, results: List[Dict[str, float]], decision_text: str = None
+    ) -> List[RiskFlag]:
         """
         Detect risks in simulation results.
-        
+
         Args:
             results: List of simulation results
             decision_text: Original decision text for emotional/psychological risk detection
-        
+
         Returns:
             List of detected risk flags
         """
         risks = []
-        
+
         # Detect emotional/psychological risks from decision text
         if decision_text:
             risks.extend(self._detect_emotional_risks(decision_text))
-        
+
         if not results or len(results) < 10:
             return risks
-        
+
         # Extract metrics
         overall_scores = [r["overall_score"] for r in results]
         risk_scores = [r["risk_score"] for r in results]
         satisfaction_scores = [r["satisfaction_score"] for r in results]
         financial_scores = [r["financial_score"] for r in results]
-        
+
         # 1. High variance (unstable outcome)
         variance = np.var(overall_scores)
         if variance > 0.05:  # Threshold for high variance
-            risks.append(RiskFlag(
-                risk_type="high_variance",
-                severity="medium",
-                description="High variance in outcomes suggests unstable results. The decision may have unpredictable consequences."
-            ))
-        
+            risks.append(
+                RiskFlag(
+                    risk_type="high_variance",
+                    severity="medium",
+                    description="High variance in outcomes suggests unstable results. The decision may have unpredictable consequences.",
+                )
+            )
+
         # 2. Long-tail downside risk
         mean_score = np.mean(overall_scores)
         percentile_10 = np.percentile(overall_scores, 10)
         downside_gap = mean_score - percentile_10
-        
+
         if downside_gap > 0.3:  # Large gap between mean and worst outcomes
-            risks.append(RiskFlag(
-                risk_type="long_tail_downside",
-                severity="high",
-                description=f"Significant downside risk detected. Worst-case scenarios ({percentile_10:.2f}) are substantially worse than average ({mean_score:.2f})."
-            ))
-        
+            risks.append(
+                RiskFlag(
+                    risk_type="long_tail_downside",
+                    severity="high",
+                    description=f"Significant downside risk detected. Worst-case scenarios ({percentile_10:.2f}) are substantially worse than average ({mean_score:.2f}).",
+                )
+            )
+
         # 3. High average risk score
         avg_risk = np.mean(risk_scores)
         if avg_risk > 0.7:
-            risks.append(RiskFlag(
-                risk_type="high_risk_score",
-                severity="high",
-                description="High overall risk level detected across scenarios. Consider additional risk mitigation strategies."
-            ))
-        
+            risks.append(
+                RiskFlag(
+                    risk_type="high_risk_score",
+                    severity="high",
+                    description="High overall risk level detected across scenarios. Consider additional risk mitigation strategies.",
+                )
+            )
+
         # 4. Negative correlation between satisfaction and financial
         if len(satisfaction_scores) > 10:
             # Check for constant values to avoid division by zero
@@ -75,81 +87,128 @@ class RiskDetector:
             if sat_std > 1e-10 and fin_std > 1e-10:  # Both have non-zero variance
                 correlation = np.corrcoef(satisfaction_scores, financial_scores)[0, 1]
                 if not np.isnan(correlation) and correlation < -0.3:  # Strong negative correlation
-                    risks.append(RiskFlag(
-                        risk_type="conflicting_factors",
-                        severity="medium",
-                        description="Conflicting factors detected: improvements in satisfaction may come at the cost of financial outcomes, or vice versa."
-                    ))
-        
+                    risks.append(
+                        RiskFlag(
+                            risk_type="conflicting_factors",
+                            severity="medium",
+                            description="Conflicting factors detected: improvements in satisfaction may come at the cost of financial outcomes, or vice versa.",
+                        )
+                    )
+
         # 5. Extreme outliers
         q25 = np.percentile(overall_scores, 25)
         q75 = np.percentile(overall_scores, 75)
         iqr = q75 - q25
-        
+
         outliers = [s for s in overall_scores if s < (q25 - 1.5 * iqr) or s > (q75 + 1.5 * iqr)]
         if len(outliers) > len(results) * 0.05:  # More than 5% outliers
-            risks.append(RiskFlag(
-                risk_type="extreme_outliers",
-                severity="low",
-                description="Unusual extreme outcomes detected in some simulations. While rare, these scenarios should be considered."
-            ))
-        
+            risks.append(
+                RiskFlag(
+                    risk_type="extreme_outliers",
+                    severity="low",
+                    description="Unusual extreme outcomes detected in some simulations. While rare, these scenarios should be considered.",
+                )
+            )
+
         # 6. Low satisfaction despite good financials
         high_financial = [r for r in results if r["financial_score"] > 0.7]
         if high_financial:
             avg_satisfaction_high_fin = np.mean([r["satisfaction_score"] for r in high_financial])
             if avg_satisfaction_high_fin < 0.4:
-                risks.append(RiskFlag(
-                    risk_type="financial_satisfaction_mismatch",
-                    severity="medium",
-                    description="Despite positive financial outcomes, satisfaction scores remain low. This suggests non-financial factors are important."
-                ))
-        
+                risks.append(
+                    RiskFlag(
+                        risk_type="financial_satisfaction_mismatch",
+                        severity="medium",
+                        description="Despite positive financial outcomes, satisfaction scores remain low. This suggests non-financial factors are important.",
+                    )
+                )
+
         return risks
-    
+
     def _detect_emotional_risks(self, decision_text: str) -> List[RiskFlag]:
         """
         Detect emotional/psychological risks from decision text.
-        
+
         Args:
             decision_text: Original decision text
-        
+
         Returns:
             List of risk flags for emotional/psychological factors
         """
         risks = []
         text_lower = decision_text.lower()
-        
+
         # Detect toxicity
-        toxicity_keywords = ["toxic", "hostile", "unhealthy", "abusive", "bullying", "harassment", "hate"]
+        toxicity_keywords = [
+            "toxic",
+            "hostile",
+            "unhealthy",
+            "abusive",
+            "bullying",
+            "harassment",
+            "hate",
+        ]
         if any(keyword in text_lower for keyword in toxicity_keywords):
             # Find the specific keyword mentioned
-            mentioned_keyword = next((kw for kw in toxicity_keywords if kw in text_lower), "toxic environment")
-            risks.append(RiskFlag(
-                risk_type="toxicity_risk",
-                severity="high",
-                description=f"Toxic work environment detected ('{mentioned_keyword}'). Toxic environments significantly impact mental health, job satisfaction, and long-term well-being. Even if financial outcomes are positive, staying in a toxic environment can lead to burnout, health issues, and regret."
-            ))
-        
+            mentioned_keyword = next(
+                (kw for kw in toxicity_keywords if kw in text_lower), "toxic environment"
+            )
+            risks.append(
+                RiskFlag(
+                    risk_type="toxicity_risk",
+                    severity="high",
+                    description=f"Toxic work environment detected ('{mentioned_keyword}'). Toxic environments significantly impact mental health, job satisfaction, and long-term well-being. Even if financial outcomes are positive, staying in a toxic environment can lead to burnout, health issues, and regret.",
+                )
+            )
+
         # Detect mental health concerns
-        mental_health_keywords = ["mentally", "depressed", "anxious", "stress", "stressed", "burnout", 
-                                  "exhausted", "overwhelmed", "drained", "unhappy", "mental health", "mental well"]
+        mental_health_keywords = [
+            "mentally",
+            "depressed",
+            "anxious",
+            "stress",
+            "stressed",
+            "burnout",
+            "exhausted",
+            "overwhelmed",
+            "drained",
+            "unhappy",
+            "mental health",
+            "mental well",
+        ]
         if any(keyword in text_lower for keyword in mental_health_keywords):
-            mentioned_keyword = next((kw for kw in mental_health_keywords if kw in text_lower), "mental health concerns")
-            risks.append(RiskFlag(
-                risk_type="mental_health_risk",
-                severity="high",
-                description=f"Mental health concerns detected ('{mentioned_keyword}'). Mental health and well-being are critical factors that should be prioritized. Continuing in an environment that negatively impacts mental health can have severe long-term consequences, regardless of financial benefits."
-            ))
-        
+            mentioned_keyword = next(
+                (kw for kw in mental_health_keywords if kw in text_lower), "mental health concerns"
+            )
+            risks.append(
+                RiskFlag(
+                    risk_type="mental_health_risk",
+                    severity="high",
+                    description=f"Mental health concerns detected ('{mentioned_keyword}'). Mental health and well-being are critical factors that should be prioritized. Continuing in an environment that negatively impacts mental health can have severe long-term consequences, regardless of financial benefits.",
+                )
+            )
+
         # Detect stress indicators
-        stress_keywords = ["stress", "stressed", "pressure", "overwhelming", "too much", "can't handle"]
-        if any(keyword in text_lower for keyword in stress_keywords) and not any(r.risk_type == "mental_health_risk" for r in risks):
-            mentioned_keyword = next((kw for kw in stress_keywords if kw in text_lower), "high stress")
-            risks.append(RiskFlag(
-                risk_type="stress_risk",
-                severity="medium",
-                description=f"High stress indicators detected ('{mentioned_keyword}'). Chronic stress can lead to burnout, health problems, and decreased satisfaction. Consider stress management strategies or evaluating whether the current situation is sustainable."
-            ))
-        
+        stress_keywords = [
+            "stress",
+            "stressed",
+            "pressure",
+            "overwhelming",
+            "too much",
+            "can't handle",
+        ]
+        if any(keyword in text_lower for keyword in stress_keywords) and not any(
+            r.risk_type == "mental_health_risk" for r in risks
+        ):
+            mentioned_keyword = next(
+                (kw for kw in stress_keywords if kw in text_lower), "high stress"
+            )
+            risks.append(
+                RiskFlag(
+                    risk_type="stress_risk",
+                    severity="medium",
+                    description=f"High stress indicators detected ('{mentioned_keyword}'). Chronic stress can lead to burnout, health problems, and decreased satisfaction. Consider stress management strategies or evaluating whether the current situation is sustainable.",
+                )
+            )
+
         return risks

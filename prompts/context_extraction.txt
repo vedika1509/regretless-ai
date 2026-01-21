@@ -1,0 +1,7 @@
+Task: extract qualitative factors and missing context from the user text.
+
+Constraints:
+- Do not output distributions, probabilities, or numeric parameters.
+- Do not invent numbers; only repeat numbers that appear in the user text.
+- Output JSON only.
+

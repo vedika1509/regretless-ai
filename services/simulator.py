@@ -158,9 +158,13 @@ class MonteCarloSimulator:
         sorted_results = sorted(results, key=lambda x: x["overall_score"])
 
         n = len(sorted_results)
-        tail = max(1, int(0.10 * n))
+        # Product choice: use 25/50/25 buckets for interpretability.
+        # - Worst Case: bottom 25%
+        # - Most Likely: middle 50%
+        # - Best Case: top 25%
+        tail = max(1, int(0.25 * n))
 
-        # Buckets: worst 10%, best 10%, most_likely = remaining 80%
+        # Buckets: worst 25%, best 25%, most_likely = middle 50%
         worst_case_data = sorted_results[:tail]
         best_case_data = sorted_results[n - tail :]
         most_likely_data = sorted_results[tail : n - tail] if n - 2 * tail >= 1 else sorted_results
@@ -198,12 +202,32 @@ class MonteCarloSimulator:
                     "satisfaction_score": 0.5,
                     "financial_score": 0.5,
                     "risk_score": 0.5,
+                    # Extra real-world dimensions (0–1) for human-facing metrics
+                    "job_security": 0.5,
+                    "financial_satisfaction": 0.5,
+                    "overall_satisfaction": 0.5,
+                    "stress": 0.5,
                 }
+
+            def _mean_outcome(key: str, default: float = 0.5) -> float:
+                vals = []
+                for r in bucket:
+                    out = r.get("outcomes") or {}
+                    v = out.get(key, None)
+                    if isinstance(v, (int, float)):
+                        vals.append(float(v))
+                return float(np.mean(vals)) if vals else float(default)
+
             return {
                 "overall_score": float(np.mean([r["overall_score"] for r in bucket])),
                 "satisfaction_score": float(np.mean([r["satisfaction_score"] for r in bucket])),
                 "financial_score": float(np.mean([r["financial_score"] for r in bucket])),
                 "risk_score": float(np.mean([r["risk_score"] for r in bucket])),
+                "job_security": _mean_outcome("job_security", 0.5),
+                "financial_satisfaction": _mean_outcome("financial_satisfaction", 0.5),
+                "overall_satisfaction": _mean_outcome("overall_satisfaction", 0.5),
+                # Stress is modeled as "higher = worse" but still returned 0–1 for readability
+                "stress": _mean_outcome("stress", 0.5),
             }
 
         best_case = _scenario_stats(best_case_data)
@@ -256,5 +280,17 @@ class MonteCarloSimulator:
         
         # Normalize to [0, 1] range
         confidence = max(0.0, min(1.0, confidence))
-        
+
+        # Guardrail: if the input space is too low-dimensional, don't claim very high confidence.
+        # (Common when the parser falls back or extracts very few variables.)
+        try:
+            sample0 = results[0].get("sampled_values") or {}
+            var_count = len(sample0)
+            if var_count <= 1:
+                confidence = min(confidence, 0.45)
+            elif var_count == 2:
+                confidence = min(confidence, 0.65)
+        except Exception:
+            pass
+
         return confidence

@@ -1,11 +1,12 @@
 """Generate PDF reports."""
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 from io import BytesIO
 from models.scenario import AnalysisResult
+from utils.humanize import band_label, compute_readiness, regret_band, to_10
 
 
 def generate_pdf_report(result: AnalysisResult, decision_text: str, filename: str = None) -> BytesIO:
@@ -49,6 +50,57 @@ def generate_pdf_report(result: AnalysisResult, decision_text: str, filename: st
     )
     story.append(conf_para)
     story.append(Spacer(1, 0.2*inch))
+
+    # Decision readiness + human metrics (most likely)
+    try:
+        verdict = compute_readiness(
+            regret01=float(result.regret_score),
+            confidence01=float(result.confidence),
+            risks=result.risks,
+            context={},  # context already baked into decision_text for this export
+        )
+        story.append(
+            Paragraph(
+                f"<b>Decision Readiness:</b> {verdict.label}<br/><i>{verdict.rationale}</i>",
+                styles["Normal"],
+            )
+        )
+        story.append(Spacer(1, 0.15 * inch))
+
+        most = result.scenarios.get("most_likely")
+        if most:
+            likely_label, _ = band_label(float(most.outcomes.overall_score))
+            job_sec = float((most.metrics or {}).get("job_security", 0.5))
+            fin = float((most.metrics or {}).get("financial_satisfaction", most.outcomes.financial_score))
+            stress = float((most.metrics or {}).get("stress", 0.5))
+            mental = 1.0 - stress
+
+            story.append(Paragraph(f"<b>Likely Outcome:</b> {likely_label}", styles["Normal"]))
+            story.append(Spacer(1, 0.1 * inch))
+
+            metrics_data = [
+                ["Human Metric", "Value"],
+                ["Career Stability", f"{to_10(job_sec)}/10"],
+                ["Financial Safety", f"{to_10(fin)}/10"],
+                ["Mental Wellbeing", f"{to_10(mental)}/10"],
+                ["Long-term Regret Risk", regret_band(float(result.regret_score))],
+            ]
+            metrics_table = Table(metrics_data, colWidths=[3*inch, 2*inch])
+            metrics_table.setStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ])
+            story.append(metrics_table)
+            story.append(Spacer(1, 0.25 * inch))
+    except Exception:
+        # Keep PDF export resilient even if interpretability helpers fail
+        pass
     
     # Simulation info
     sim_para = Paragraph(

@@ -1,22 +1,14 @@
 """Service for conversational interaction with analysis results."""
-import os
-import google.generativeai as genai
+import json
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 
 from models.scenario import AnalysisResult
+from services.llm.groq_client import safe_chat
+from services.llm.guardrails import extract_number_tokens, redact_invented_numbers
+from services.safety import assess_safety
 
 load_dotenv()
-
-
-def initialize_gemini() -> genai.GenerativeModel:
-    """Initialize Gemini API client."""
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY not found in environment variables")
-    
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel('gemini-pro')
 
 
 def format_analysis_context(result: AnalysisResult, decision_text: str) -> str:
@@ -101,7 +93,8 @@ def generate_chat_response(
     user_message: str,
     analysis_result: AnalysisResult,
     decision_text: str,
-    conversation_history: List[Dict[str, str]] = None
+    conversation_history: List[Dict[str, str]] = None,
+    interpretation: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Generate conversational response based on user message and analysis context.
@@ -115,45 +108,43 @@ def generate_chat_response(
     Returns:
         Assistant's response
     """
-    model = initialize_gemini()
-    
     # Detect question type
     question_type = detect_question_type(user_message)
     
     # Format analysis context
     analysis_context = format_analysis_context(analysis_result, decision_text)
+
+    # Add interpreter summary if provided (LLM output, already structured/validated upstream).
+    interpretation_block = ""
+    if interpretation:
+        try:
+            interpretation_block = "\nInterpreter Summary (post-simulation, no new numbers):\n" + json.dumps(
+                interpretation, ensure_ascii=False
+            ) + "\n"
+        except Exception:
+            interpretation_block = ""
     
     # Build conversation context
-    conversation_context = """You are Regretless AI, a helpful decision analysis assistant. You've just provided an analysis of a user's decision using probabilistic simulation.
+    safety = assess_safety((decision_text or "") + "\n" + (user_message or ""))
 
-Your role:
-- Help users understand their decision analysis results
-- Answer questions about scenarios, risks, and confidence scores
-- Provide empathetic, clear, and practical guidance
-- Help users reason through their decision using the analysis data
-- Be conversational, friendly, and supportive
-- Understand emotional context and concerns (e.g., if they mention toxicity, stress, fear, etc.)
+    conversation_context = """You are Regretless AI — a decision intelligence assistant.
 
-You have access to the complete analysis including:
-- Best case, worst case, and most likely scenarios
-- Financial, satisfaction, and risk scores
-- Detected risks and their severities
-- Overall confidence in the analysis
-- Regret Score (proprietary metric for decision regret risk)
+You do NOT predict the future. You interpret Monte Carlo simulations.
+
+Hard rules:
+- Never invent numbers or probabilities.
+- Never override the simulation results.
+- Explain uncertainty in human terms.
+- Ask clarifying questions only when confidence is low or context is missing.
+- Challenge high-risk or irreversible decisions with preparation-first framing.
 
 Guidelines:
-- Reference specific numbers and data from the analysis when relevant
-- Help users explore implications of different scenarios
-- Acknowledge concerns and provide thoughtful perspectives
-- If the user mentions additional context (like "but it is toxic", "I'm stressed", etc.), acknowledge it directly and relate it to the analysis
-- Be empathetic and understanding - this is a personal decision
-- Use the Regret Score and risk analysis to provide meaningful insights
-- If asked about something not in the analysis, say so honestly but try to relate it to what we know
-- Keep responses natural and conversational (2-4 sentences is good, but can be longer if needed)
-- Don't be robotic - show genuine understanding and care
+- Reference specific numbers from the provided analysis when relevant (and only those).
+- Be empathetic and practical.
+- If the user mentions additional context (toxicity, stress, fear), acknowledge it and relate it to the analysis.
+- If asked about outcomes, summarize best/most-likely/worst using the scenario data you have.
 
-IMPORTANT: When users share additional context about their situation (like mentioning toxicity, stress, or concerns), acknowledge it directly and help them think through how it relates to the analysis results. Be genuine and empathetic.
-
+Tone: calm, neutral, supportive.
 """
     
     # Add conversation history if available
@@ -206,6 +197,7 @@ Instead, directly tell them what the analysis shows will happen in each scenario
     prompt = f"""{conversation_context}
 
 {analysis_context}
+{interpretation_block}
 
 {history_text}
 {emotional_context}
@@ -227,21 +219,30 @@ If they're asking about outcomes ("what will happen"), directly interpret and su
 Generate your response now:"""
 
     try:
-        response = model.generate_content(prompt)
-        reply = response.text.strip()
+        response = safe_chat(
+            [
+                {"role": "system", "content": "Return plain text. Do not add any numbers not already present."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.25,
+            max_tokens=450,
+        )
+        reply = (response.text or "").strip()
         
         # Clean up response
         if reply.startswith('"') and reply.endswith('"'):
             reply = reply[1:-1]
-        
-        # Remove any markdown formatting that might interfere
-        if reply.startswith('**') or reply.startswith('*'):
-            # Keep markdown but ensure it's clean
-            pass
-        
-        return reply
+
+        # Safety prefix (high-risk domain or crisis)
+        if safety.guidance_prefix:
+            reply = safety.guidance_prefix + "\n\n" + reply
+
+        # Guardrail: disallow invented numbers not present in context/prompt.
+        allowed = set(extract_number_tokens(analysis_context))
+        guarded, _extras = redact_invented_numbers(reply, allowed_numbers=allowed)
+        return guarded.strip()
     
-    except Exception as e:
+    except Exception:
         # Better error handling - try to give contextual response even on error
         from services.regret_calculator import get_regret_level, get_regret_explanation
         
@@ -250,8 +251,8 @@ Generate your response now:"""
         
         if any(word in user_lower for word in ["toxic", "toxicity", "stress", "stressed", "worried", "concerned", "scared", "afraid"]):
             regret_level = get_regret_level(analysis_result.regret_score)
-            return f"I hear you mentioning concerns about {user_message.lower()}. That's a really important factor in your decision - a toxic work environment can significantly impact your well-being and satisfaction, even if the financial aspects look good.\n\nLooking at your analysis, your Regret Score is {analysis_result.regret_score:.2f} ({regret_level}), which suggests {get_regret_explanation(analysis_result.regret_score).lower()} However, the toxicity you're experiencing might not be fully captured in the numbers. Toxic environments can lead to long-term burnout, health issues, and regret even if other factors improve.\n\nWould you like to discuss how this toxicity factor might change your analysis, or explore what your options look like considering this?"
+            return f"{safety.guidance_prefix + chr(10) + chr(10) if safety.guidance_prefix else ''}I hear you mentioning concerns about {user_message.lower()}. That's a really important factor in your decision.\n\nLooking at your analysis, your Regret Score is {analysis_result.regret_score:.2f} ({regret_level}), which suggests {get_regret_explanation(analysis_result.regret_score).lower()} Toxic environments and high stress can dominate long-term outcomes even when other metrics look okay.\n\nWould you like to share what a safer version of this decision would look like (e.g., a bridge plan or a short delay)?"
         else:
             # Still try to be helpful with context
             regret_level = get_regret_level(analysis_result.regret_score)
-            return f"Based on your analysis, I see your Regret Score is {analysis_result.regret_score:.2f} ({regret_level}), which suggests {get_regret_explanation(analysis_result.regret_score).lower()} \n\nYou mentioned: '{user_message}'. Can you tell me more about how this relates to your decision? I'd like to help you think through this."
+            return f"{safety.guidance_prefix + chr(10) + chr(10) if safety.guidance_prefix else ''}Based on your analysis, your Regret Score is {analysis_result.regret_score:.2f} ({regret_level}), which suggests {get_regret_explanation(analysis_result.regret_score).lower()}\n\nYou mentioned: '{user_message}'. What part of the decision feels most uncertain right now — money, stability, wellbeing, or relationships?"

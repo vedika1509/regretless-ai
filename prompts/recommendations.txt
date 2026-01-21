@@ -1,0 +1,8 @@
+Task: generate actionable recommendations from simulation results.
+
+Constraints:
+- Every recommendation must reduce risk or regret.
+- No invented numbers; avoid numeric timelines unless provided.
+- Include priority and timeline categories.
+- Output JSON only.
+

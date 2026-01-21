@@ -1,0 +1,7 @@
+Task: generate 3–5 clarifying questions before simulation.
+
+Constraints:
+- No probabilities, no outcomes, no invented numbers.
+- Focus on runway, alternative plan, constraints, timeline, and whether decision is stress-driven.
+- Return JSON array of strings only.
+

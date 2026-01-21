@@ -1,0 +1,16 @@
+Task: interpret Monte Carlo simulation outputs.
+
+Inputs include:
+- Scenario scores and probabilities
+- Risk flags
+- Regret score
+- Confidence score
+- Counterfactual gradients (optional)
+
+Constraints:
+- Never invent numbers or probabilities.
+- Never override simulation results.
+- Explain uncertainty and trade-offs.
+- Provide scenario stories and regret paths.
+- Output JSON in the schema required by the app.
+

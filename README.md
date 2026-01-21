@@ -4,10 +4,38 @@
 
 Regretless AI is a probabilistic decision simulator that helps you make better decisions by exploring multiple future scenarios. Instead of predicting the future, it shows you a range of plausible outcomes with confidence scores, regret analysis, and actionable insights.
 
+## Responsible Role Split (Judge-Friendly)
+
+**Simulation = Brain** (math + uncertainty)
+- Monte Carlo simulation produces **all numeric outputs** (scores, distributions, probabilities).
+
+**LLM = Voice + Judgment** (meaning + safety)
+- Interviews for missing context (before simulation)
+- Interprets simulation outputs into human meaning (after simulation)
+- Surfaces trade-offs, regret paths, and actionable mitigations
+- Challenges high-risk / irreversible decisions (no blind compliance)
+- **Never invents numbers** or overrides simulation results
+
+### 30-second judge pitch
+Regretless AI separates reasoning from storytelling: we use Monte Carlo simulation to explore thousands of possible futures for a decision, then a Groq LLM interprets those results into understandable trade-offs, scenario stories, regret paths, and safer next steps—without generating or hallucinating numbers.
+
+### Architecture diagram
+
+```mermaid
+flowchart TD
+UserInput-->LLMInterview
+LLMInterview-->ContextStructuring
+ContextStructuring-->MonteCarlo
+MonteCarlo-->RawResults
+RawResults-->LLMInterpretation
+LLMInterpretation-->UIAndChat
+```
+
 ## ✨ Key Features
 
 ### Core Functionality
-- **Decision Parsing**: Uses AI (Google Gemini) to extract structured variables from natural language decisions
+- **Decision Intake (LLM Interviewer)**: Uses a Groq LLM to ask clarifying questions and structure context (no math)
+- **Deterministic Structuring**: Converts qualitative factors into probability distributions via code (not the LLM)
 - **Monte Carlo Simulation**: Runs 3,000+ simulations to explore possible outcomes
 - **Scenario Analysis**: Identifies best case, worst case, and most likely scenarios
 - **Risk Detection**: Automatically flags hidden risks and anomalies
@@ -80,7 +108,8 @@ Regretless AI is a probabilistic decision simulator that helps you make better d
 │  └──────────────────────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │           Service Layer (Python Modules)              │   │
-│  │  • Decision Parser (LLM/Gemini)                       │   │
+│  │  • LLM Interviewer (Groq)                             │   │
+│  │  • Deterministic Structurer (no LLM)                  │   │
 │  │  • Causal Graph Builder                               │   │
 │  │  • Monte Carlo Simulator                              │   │
 │  │  • Risk Detector                                      │   │
@@ -118,9 +147,10 @@ Regretless AI is a probabilistic decision simulator that helps you make better d
    ```bash
    cp .env.example .env
    ```
-   Edit `.env` and add your Gemini API key:
+   Edit `.env` and add your Groq API key:
    ```
-   GEMINI_API_KEY=your_api_key_here
+   GROQ_API_KEY=your_api_key_here
+   GROQ_MODEL=llama-3.3-70b-versatile
    SIMULATION_COUNT=3000
    ```
 
@@ -140,7 +170,8 @@ The app will open in your browser at `http://localhost:8501`.
 1. Push your code to GitHub
 2. Connect your repository to Streamlit Cloud
 3. Add environment variables in the Streamlit Cloud dashboard:
-   - `GEMINI_API_KEY`: Your Google Gemini API key
+   - `GROQ_API_KEY`: Your Groq API key
+   - `GROQ_MODEL`: Optional model override
    - `SIMULATION_COUNT`: Number of simulations (default: 3000)
 
 ## How It Works
@@ -148,49 +179,53 @@ The app will open in your browser at `http://localhost:8501`.
 1. **Decision Input**: You describe your decision in natural language
    - Example: "Should I switch jobs from Company A to B?"
 
-2. **Decision Parsing** (LLM): The system extracts structured variables
-   - Variables: salary_change, company_stability, work_life_balance, etc.
-   - Each variable gets a probability distribution (normal, beta, uniform, etc.)
+2. **Decision Intake (LLM Interviewer)**: the LLM asks clarifying questions and extracts qualitative factors
+   - Output: *variable candidates* + missing context (no probabilities, no distributions)
 
-3. **Causal Graph**: Maps variables to outcome dimensions
+3. **Deterministic Structuring (no LLM)**: code assigns probability distributions
+   - Variables: salary_change, company_stability, work_life_balance, stress_level, etc.
+   - Distributions: normal/beta/uniform/bernoulli are assigned by heuristics
+
+4. **Causal Graph**: Maps variables to outcome dimensions
    - salary_change → financial_satisfaction
    - company_stability → job_security
    - stress → overall_satisfaction
    - etc.
 
-4. **Monte Carlo Simulation**: Runs 3,000+ simulations
+5. **Monte Carlo Simulation**: Runs 3,000+ simulations (the only source of numbers/probabilities)
    - Samples from probability distributions
    - Computes outcomes using causal relationships
    - Generates outcome scores (satisfaction, financial, risk, overall)
 
-5. **Scenario Extraction**: Identifies key scenarios
-   - Best Case: Top 10% of simulations (highest combined score)
-   - Worst Case: Bottom 10% of simulations (lowest combined score)
-   - Most Likely: Median cluster (45-55th percentile)
+6. **Scenario Extraction**: Identifies key scenarios
+   - Best Case: Top 25% of simulations (highest combined score)
+   - Worst Case: Bottom 25% of simulations (lowest combined score)
+   - Most Likely: Middle 50% (most probable range)
 
-6. **Regret Score Calculation**: Computes proprietary regret metric
+7. **Regret Score Calculation**: Computes proprietary regret metric
    - Regret = Σ(Probability × Loss × Emotional Cost)
    - Measures expected emotional cost of worst-case scenarios
    - Provides clear decision signal (Low/Medium/High)
 
-7. **Risk Detection**: Flags potential issues
+8. **Risk Detection**: Flags potential issues
    - High variance (unstable outcomes)
    - Long-tail downside risks
    - Conflicting factors
    - Extreme outliers
    - Financial-satisfaction mismatches
 
-8. **Counterfactual Analysis**: Identifies what would change outcomes
+9. **Counterfactual Analysis**: Identifies what would change outcomes
    - Computes gradients (marginal impact per variable)
    - Ranks variables by impact
    - Shows minimum changes needed to shift scenarios
 
-9. **Explanation Generation** (LLM): Creates human-readable narratives
-   - Converts numeric outcomes into clear stories
-   - Provides empathetic, practical insights
-   - Generates actionable recommendations
+10. **LLM Interpretation Layer (Groq)**: converts simulation outputs into human meaning
+   - Translates uncertainty into plain language
+   - Writes scenario stories (without inventing numbers)
+   - Explains regret paths using counterfactual reasoning
+   - Generates actionable recommendations (risk/regret reducing)
 
-10. **Visualization**: Interactive charts and graphs
+11. **Visualization**: Interactive charts and graphs
     - Distribution histograms
     - Scenario comparison radar charts
     - Explainability causal graph
@@ -233,7 +268,7 @@ regretless-ai/
 - `streamlit>=1.28.0`: Web framework
 - `numpy>=1.24.0`: Numerical computations and probability distributions
 - `pydantic>=2.0.0`: Data validation and models
-- `google-generativeai>=0.3.0`: Gemini LLM API
+- `groq>=1.0.0`: Groq LLM API
 - `python-dotenv>=1.0.0`: Environment variable management
 
 ### Visualization Dependencies
@@ -299,12 +334,11 @@ regretless-ai/
 - Real-time sensitivity analysis
 - Actionable recommendations
 
-### 🧠 AI-Powered Features
+### 🧠 AI-Powered Features (Responsible Role Split)
 
-- Natural language decision parsing (Gemini)
-- Context-aware explanations (Gemini)
-- Intelligent recommendations (Gemini)
-- Conversational decision discussion (Gemini)
+- LLM interviewer + interpretation (Groq)
+- Deterministic structuring for simulation inputs (no LLM probabilities)
+- Simulation engine as the source of truth for numbers
 
 ## Philosophy
 
@@ -328,7 +362,7 @@ regretless-ai/
 
 Built with:
 - [Streamlit](https://streamlit.io/) - Web application framework
-- [Google Gemini](https://ai.google.dev/) - Large language model
+- [Groq](https://console.groq.com/) - LLM API
 - [Plotly](https://plotly.com/python/) - Interactive visualizations
 - [NumPy](https://numpy.org/) - Numerical computing
 - [Pydantic](https://docs.pydantic.dev/) - Data validation
