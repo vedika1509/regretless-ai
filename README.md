@@ -143,16 +143,24 @@ LLMInterpretation-->UIAndChat
    pip install -r requirements.txt
    ```
 
-3. **Set up environment variables**:
-   ```bash
-   cp .env.example .env
-   ```
-   Edit `.env` and add your Groq API key:
-   ```
-   GROQ_API_KEY=your_api_key_here
-   GROQ_MODEL=llama-3.3-70b-versatile
-   SIMULATION_COUNT=3000
-   ```
+3. **Set up environment variables** (recommended: OS env vars; do not commit secrets)
+
+   - **PowerShell (current session)**:
+     ```powershell
+     $env:GROQ_API_KEY="your_api_key_here"
+     $env:GROQ_MODEL="llama-3.3-70b-versatile"   # optional
+     $env:SIMULATION_COUNT="3000"                # optional
+     ```
+
+   - **Local `.env` file** (optional):
+     - Create a `.env` file locally (it is ignored by `.gitignore`).
+     - Put:
+       ```
+       GROQ_API_KEY=your_api_key_here
+       GROQ_MODEL=llama-3.3-70b-versatile
+       SIMULATION_COUNT=3000
+       ```
+     - Do not commit `.env` (GitHub push protection will block secrets).
 
 ## Usage
 
@@ -236,16 +244,31 @@ The app will open in your browser at `http://localhost:8501`.
 ```
 regretless-ai/
 ├── app.py                      # Main Streamlit application
+├── prompts/                    # Prompt package (role split + constraints)
+│   ├── system.txt
+│   ├── interview_questions.txt
+│   ├── context_extraction.txt
+│   ├── interpretation.txt
+│   └── recommendations.txt
+├── scripts/
+│   └── smoke_test.py           # Lightweight smoke tests (no network calls)
 ├── services/
-│   ├── decision_parser.py     # LLM decision decomposition
+│   ├── decision_parser.py     # LLM qualitative extraction (no probabilities)
+│   ├── structurer.py          # Deterministic distribution assignment (no LLM)
+│   ├── interview_service.py   # LLM interviewer (clarifying questions)
+│   ├── interpretation_service.py # LLM interpretation layer (structured JSON)
+│   ├── safety.py              # High-risk domain + crisis safeguards (deterministic)
+│   ├── llm/
+│   │   ├── groq_client.py      # Groq client wrapper (single integration point)
+│   │   └── guardrails.py       # No-invented-numbers guardrail
 │   ├── causal_graph.py        # Causal relationship builder
 │   ├── simulator.py           # Monte Carlo engine
 │   ├── risk_detector.py       # Risk analysis
 │   ├── regret_calculator.py   # Regret Score calculation
 │   ├── counterfactual_service.py  # Counterfactual Explorer
-│   ├── explanation_generator.py  # LLM explanation
-│   ├── recommendation_service.py  # Actionable recommendations
-│   ├── chat_service.py        # Conversational interface
+│   ├── explanation_generator.py  # Scenario explanations (LLM, no new numbers)
+│   ├── recommendation_service.py  # Recommendations (LLM, no new numbers)
+│   ├── chat_service.py        # Conversational interface (LLM + safeguards)
 │   ├── report_generator.py    # PDF report generation
 │   └── comparison_service.py  # Decision comparison
 ├── models/
@@ -256,7 +279,6 @@ regretless-ai/
 │   ├── charts.py              # Interactive Plotly charts
 │   └── explainability_graph.py  # Causal graph visualization
 ├── requirements.txt
-├── .env.example
 ├── .streamlit/
 │   └── config.toml            # Streamlit configuration
 └── README.md
