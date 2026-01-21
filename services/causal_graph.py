@@ -17,12 +17,17 @@ class CausalGraph:
             ("cost", "financial_satisfaction", "negative", 0.7),
             ("rent", "financial_satisfaction", "negative", 0.7),
             ("price", "financial_satisfaction", "negative", 0.7),
+            ("savings", "financial_satisfaction", "positive", 0.6),
+            ("expenses", "financial_satisfaction", "negative", 0.6),
             
             # Stability and security
             ("stability", "job_security", "positive", 0.9),
             ("company_stability", "job_security", "positive", 0.9),
             ("market_risk", "job_security", "negative", 0.6),
             ("uncertainty", "risk_score", "positive", 0.7),
+            ("risk", "risk_score", "positive", 0.7),
+            ("volatility", "risk_score", "positive", 0.6),
+            ("variance", "risk_score", "positive", 0.6),
             
             # Time and stress
             ("stress", "overall_satisfaction", "negative", 0.7),
@@ -30,14 +35,35 @@ class CausalGraph:
             ("work_life_balance", "overall_satisfaction", "positive", 0.6),
             ("time", "overall_satisfaction", "positive", 0.5),
             ("hours", "overall_satisfaction", "negative", 0.5),
+            ("commute", "overall_satisfaction", "negative", 0.4),
+            ("sleep", "overall_satisfaction", "positive", 0.3),
             
             # Career growth
             ("growth", "satisfaction_score", "positive", 0.7),
             ("career", "satisfaction_score", "positive", 0.7),
             ("opportunity", "satisfaction_score", "positive", 0.6),
+            ("learning", "satisfaction_score", "positive", 0.5),
+            ("promotion", "satisfaction_score", "positive", 0.5),
+
+            # Emotional / psychological factors (critical for job and life decisions)
+            ("toxic", "satisfaction_score", "negative", 0.9),
+            ("toxicity", "satisfaction_score", "negative", 0.9),
+            ("toxicity", "risk_score", "positive", 0.9),
+            ("mental_health", "satisfaction_score", "negative", 0.85),
+            ("mental", "satisfaction_score", "negative", 0.75),
+            ("burnout", "satisfaction_score", "negative", 0.85),
+            ("burnout", "risk_score", "positive", 0.85),
+            ("well_being", "satisfaction_score", "positive", 0.6),
+            ("wellbeing", "satisfaction_score", "positive", 0.6),
+            ("support", "satisfaction_score", "positive", 0.4),
+            ("manager", "satisfaction_score", "positive", 0.35),
+            ("culture", "satisfaction_score", "positive", 0.35),
+            ("harassment", "satisfaction_score", "negative", 0.95),
+            ("harassment", "risk_score", "positive", 0.95),
             
             # Default catch-all for unknown variables
-            ("default", "overall_satisfaction", "positive", 0.3),
+            # Note: we do NOT assume unknown variables are positive; the sampled value sign drives direction.
+            ("default", "overall_satisfaction", "positive", 0.25),
         ]
         
         # Special handling for job switches

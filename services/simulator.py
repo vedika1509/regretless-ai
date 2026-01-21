@@ -40,7 +40,29 @@ class MonteCarloSimulator:
         elif dist_type == "beta":
             alpha = params.get("alpha", 2.0)
             beta = params.get("beta", 2.0)
-            return np.random.beta(alpha, beta)
+            x = np.random.beta(alpha, beta)  # in [0, 1]
+
+            # Optional scaling to a custom range.
+            # - If params include {min, max}, map into [min, max]
+            # - If params include {range: [min, max]}, map into that range
+            if "min" in params and "max" in params:
+                min_val = float(params["min"])
+                max_val = float(params["max"])
+                return min_val + x * (max_val - min_val)
+            if "range" in params and isinstance(params["range"], (list, tuple)) and len(params["range"]) == 2:
+                min_val = float(params["range"][0])
+                max_val = float(params["range"][1])
+                return min_val + x * (max_val - min_val)
+
+            # If a variable's base value is outside [0, 1], treat this beta sample as a signed factor.
+            # This prevents "negative" concepts (e.g., toxicity) from always sampling as positive.
+            if distribution.value < 0.0 or distribution.value > 1.0:
+                signed = (x * 2.0) - 1.0  # in [-1, 1]
+                # Optional: dampen/scale the signed factor
+                scale = float(params.get("scale", 1.0))
+                return signed * scale
+
+            return x
         elif dist_type == "uniform":
             min_val = params.get("min", -0.5)
             max_val = params.get("max", 0.5)
@@ -80,8 +102,17 @@ class MonteCarloSimulator:
             
             # Calculate composite scores
             financial_score = outcomes.get("financial_satisfaction", 0.5)
-            satisfaction_score = outcomes.get("satisfaction_score", 0.5)
-            risk_score = outcomes.get("risk_score", 0.5)
+            # The causal model often routes many human factors into overall_satisfaction.
+            # Blend it into satisfaction_score so those drivers actually affect displayed results.
+            satisfaction_score = (
+                0.6 * outcomes.get("satisfaction_score", 0.5)
+                + 0.4 * outcomes.get("overall_satisfaction", 0.5)
+            )
+
+            # Blend risk with (lack of) job security so stability drivers influence risk outcomes.
+            base_risk = outcomes.get("risk_score", 0.5)
+            job_insecurity = 1.0 - outcomes.get("job_security", 0.5)
+            risk_score = (0.7 * base_risk) + (0.3 * job_insecurity)
             
             # Overall score (weighted average)
             overall_score = (

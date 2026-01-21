@@ -171,15 +171,17 @@ Return ONLY the JSON object, no other text."""
         if emotional_factors["has_toxicity"] and "toxicity_level" not in variables:
             variables["toxicity_level"] = VariableDistribution(
                 value=-0.7,  # High negative impact
-                distribution="beta",
-                params={"alpha": 1, "beta": 3}  # Skewed toward negative
+                # Use a signed distribution to reflect negative impact explicitly.
+                # Uniform here avoids the common beta-in-[0,1] pitfall for "negative" concepts.
+                distribution="uniform",
+                params={"min": -1.0, "max": -0.4},
             )
         
         if emotional_factors["has_mental_health"] and "mental_health_impact" not in variables:
             variables["mental_health_impact"] = VariableDistribution(
                 value=-0.6,  # Significant negative impact
-                distribution="beta",
-                params={"alpha": 1, "beta": 2.5}  # Skewed toward negative
+                distribution="uniform",
+                params={"min": -1.0, "max": -0.3},
             )
         
         return StructuredDecision(
