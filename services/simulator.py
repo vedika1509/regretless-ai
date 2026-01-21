@@ -2,7 +2,6 @@
 import numpy as np
 from typing import Dict, List, Callable, Optional
 from models.decision import StructuredDecision, VariableDistribution
-from models.scenario import OutcomeMetrics, ScenarioResult
 from services.causal_graph import CausalGraph
 
 
@@ -157,45 +156,69 @@ class MonteCarloSimulator:
         
         # Sort by overall score
         sorted_results = sorted(results, key=lambda x: x["overall_score"])
-        
-        # Best case: top 10%
-        best_start = int(0.9 * len(sorted_results))
-        best_case_data = sorted_results[best_start:]
-        best_case = {
-            "overall_score": np.mean([r["overall_score"] for r in best_case_data]),
-            "satisfaction_score": np.mean([r["satisfaction_score"] for r in best_case_data]),
-            "financial_score": np.mean([r["financial_score"] for r in best_case_data]),
-            "risk_score": np.mean([r["risk_score"] for r in best_case_data]),
-            "probability": 0.1,
-        }
-        
-        # Worst case: bottom 10%
-        worst_case_data = sorted_results[:int(0.1 * len(sorted_results))]
-        worst_case = {
-            "overall_score": np.mean([r["overall_score"] for r in worst_case_data]),
-            "satisfaction_score": np.mean([r["satisfaction_score"] for r in worst_case_data]),
-            "financial_score": np.mean([r["financial_score"] for r in worst_case_data]),
-            "risk_score": np.mean([r["risk_score"] for r in worst_case_data]),
-            "probability": 0.1,
-        }
-        
-        # Most likely: median cluster (45th to 55th percentile)
-        p45_idx = int(0.45 * len(sorted_results))
-        p55_idx = int(0.55 * len(sorted_results))
-        most_likely_data = sorted_results[p45_idx:p55_idx]
-        most_likely = {
-            "overall_score": np.mean([r["overall_score"] for r in most_likely_data]),
-            "satisfaction_score": np.mean([r["satisfaction_score"] for r in most_likely_data]),
-            "financial_score": np.mean([r["financial_score"] for r in most_likely_data]),
-            "risk_score": np.mean([r["risk_score"] for r in most_likely_data]),
-            "probability": 0.1,
-        }
-        
-        return {
-            "best_case": best_case,
-            "worst_case": worst_case,
-            "most_likely": most_likely,
-        }
+
+        n = len(sorted_results)
+        tail = max(1, int(0.10 * n))
+
+        # Buckets: worst 10%, best 10%, most_likely = remaining 80%
+        worst_case_data = sorted_results[:tail]
+        best_case_data = sorted_results[n - tail :]
+        most_likely_data = sorted_results[tail : n - tail] if n - 2 * tail >= 1 else sorted_results
+
+        # Compute overall means for driver deltas
+        all_vars = set()
+        for r in results:
+            all_vars.update((r.get("sampled_values") or {}).keys())
+        all_vars = sorted(all_vars)
+
+        overall_means = {}
+        for var in all_vars:
+            vals = [r["sampled_values"][var] for r in results if "sampled_values" in r and var in r["sampled_values"]]
+            if vals:
+                overall_means[var] = float(np.mean(vals))
+
+        def _drivers_for(bucket: List[Dict[str, float]], top_k: int = 3):
+            if not bucket or not overall_means:
+                return []
+            driver_rows = []
+            for var, overall_mean in overall_means.items():
+                vals = [r["sampled_values"][var] for r in bucket if "sampled_values" in r and var in r["sampled_values"]]
+                if not vals:
+                    continue
+                bucket_mean = float(np.mean(vals))
+                delta = bucket_mean - overall_mean
+                driver_rows.append({"variable": var, "mean": bucket_mean, "delta": float(delta)})
+            driver_rows.sort(key=lambda x: abs(x["delta"]), reverse=True)
+            return driver_rows[:top_k]
+
+        def _scenario_stats(bucket: List[Dict[str, float]]):
+            if not bucket:
+                return {
+                    "overall_score": 0.5,
+                    "satisfaction_score": 0.5,
+                    "financial_score": 0.5,
+                    "risk_score": 0.5,
+                }
+            return {
+                "overall_score": float(np.mean([r["overall_score"] for r in bucket])),
+                "satisfaction_score": float(np.mean([r["satisfaction_score"] for r in bucket])),
+                "financial_score": float(np.mean([r["financial_score"] for r in bucket])),
+                "risk_score": float(np.mean([r["risk_score"] for r in bucket])),
+            }
+
+        best_case = _scenario_stats(best_case_data)
+        best_case["probability"] = len(best_case_data) / n
+        best_case["drivers"] = _drivers_for(best_case_data)
+
+        worst_case = _scenario_stats(worst_case_data)
+        worst_case["probability"] = len(worst_case_data) / n
+        worst_case["drivers"] = _drivers_for(worst_case_data)
+
+        most_likely = _scenario_stats(most_likely_data)
+        most_likely["probability"] = len(most_likely_data) / n
+        most_likely["drivers"] = _drivers_for(most_likely_data)
+
+        return {"best_case": best_case, "worst_case": worst_case, "most_likely": most_likely}
     
     def calculate_confidence(self, results: List[Dict[str, float]]) -> float:
         """

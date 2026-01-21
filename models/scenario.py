@@ -1,5 +1,5 @@
 """Scenario result models."""
-from typing import Dict, Any, List, Optional
+from typing import Dict, List
 from pydantic import BaseModel, Field
 
 
@@ -11,12 +11,24 @@ class OutcomeMetrics(BaseModel):
     overall_score: float = Field(..., ge=0.0, le=1.0)
 
 
+class ScenarioDriver(BaseModel):
+    """A key driver that differentiates a scenario (based on sampled inputs)."""
+
+    variable: str = Field(..., description="Variable name (snake_case)")
+    mean: float = Field(..., description="Mean sampled value for this scenario bucket")
+    delta: float = Field(..., description="Scenario mean minus overall mean")
+
+
 class ScenarioResult(BaseModel):
     """Result for a single scenario."""
     scenario_type: str = Field(..., description="best_case, worst_case, or most_likely")
     probability: float = Field(..., ge=0.0, le=1.0, description="Probability of this scenario")
     outcomes: OutcomeMetrics
     explanation: str = Field(..., description="Human-readable explanation of the scenario")
+    drivers: List[ScenarioDriver] = Field(
+        default_factory=list,
+        description="Top drivers that explain why this scenario looks this way",
+    )
     metrics: Dict[str, float] = Field(default_factory=dict, description="Additional metrics")
 
 

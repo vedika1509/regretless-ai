@@ -199,19 +199,22 @@ def analyze_decision(decision_text: str, decision_type: str):
         scenarios = {}
         for scenario_type, metrics in scenario_data.items():
             with st.spinner(f"📝 Generating {scenario_type} explanation..."):
-                explanation = generate_scenario_explanation(scenario_type, metrics, decision_text)
+                drivers = metrics.get("drivers", [])
+                numeric_metrics = {k: v for k, v in metrics.items() if isinstance(v, (int, float))}
+                explanation = generate_scenario_explanation(scenario_type, numeric_metrics, decision_text)
 
                 scenarios[scenario_type] = ScenarioResult(
                     scenario_type=scenario_type,
-                    probability=metrics["probability"],
+                    probability=float(numeric_metrics["probability"]),
                     outcomes=OutcomeMetrics(
-                        satisfaction_score=metrics["satisfaction_score"],
-                        financial_score=metrics["financial_score"],
-                        risk_score=metrics["risk_score"],
-                        overall_score=metrics["overall_score"],
+                        satisfaction_score=float(numeric_metrics["satisfaction_score"]),
+                        financial_score=float(numeric_metrics["financial_score"]),
+                        risk_score=float(numeric_metrics["risk_score"]),
+                        overall_score=float(numeric_metrics["overall_score"]),
                     ),
                     explanation=explanation,
-                    metrics=metrics,
+                    drivers=drivers,
+                    metrics=numeric_metrics,
                 )
 
         # Step 6: Calculate Regret Score
@@ -1302,19 +1305,22 @@ def perform_analysis(decision_text: str, decision_type: str):
         # Step 5: Generate explanations
         scenarios = {}
         for scenario_type, metrics in scenario_data.items():
-            explanation = generate_scenario_explanation(scenario_type, metrics, decision_text)
+            drivers = metrics.get("drivers", [])
+            numeric_metrics = {k: v for k, v in metrics.items() if isinstance(v, (int, float))}
+            explanation = generate_scenario_explanation(scenario_type, numeric_metrics, decision_text)
 
             scenarios[scenario_type] = ScenarioResult(
                 scenario_type=scenario_type,
-                probability=metrics["probability"],
+                probability=float(numeric_metrics["probability"]),
                 outcomes=OutcomeMetrics(
-                    satisfaction_score=metrics["satisfaction_score"],
-                    financial_score=metrics["financial_score"],
-                    risk_score=metrics["risk_score"],
-                    overall_score=metrics["overall_score"],
+                    satisfaction_score=float(numeric_metrics["satisfaction_score"]),
+                    financial_score=float(numeric_metrics["financial_score"]),
+                    risk_score=float(numeric_metrics["risk_score"]),
+                    overall_score=float(numeric_metrics["overall_score"]),
                 ),
                 explanation=explanation,
-                metrics=metrics,
+                drivers=drivers,
+                metrics=numeric_metrics,
             )
 
         # Step 6: Calculate Regret Score
